@@ -13,7 +13,7 @@ print("=" * 70)
 # ============================================
 # STEP 1: Your API Key
 # ============================================
-API_KEY = "AIzaSyBKGHFMUDcqQqw2ax-zFZwNj3peIFgI7f4"
+API_KEY = "your_api_key"
 
 print(f"\n🔍 Testing API key: {API_KEY[:10]}...{API_KEY[-5:]}")
 print(f"   Length: {len(API_KEY)} characters")
@@ -177,4 +177,5 @@ else:
 print("\n💾 Debug Info:")
 print(f"   Python version: {sys.version.split()[0]}")
 print(f"   genai library: {genai.__version__ if hasattr(genai, '__version__') else 'unknown'}")
+
 print("=" * 70)
