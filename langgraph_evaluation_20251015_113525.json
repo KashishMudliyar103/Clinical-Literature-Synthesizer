@@ -1,0 +1,127 @@
+[
+  {
+    "test_case": "Efficacy of metformin in type 2 diabetes",
+    "domain": "Endocrinology",
+    "trajectory_evaluation": {
+      "trajectory_correct": true,
+      "all_expected_nodes_visited": true,
+      "unexpected_nodes": [],
+      "actual_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "expected_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "score": 1.0
+    },
+    "element_evaluation": {
+      "keywords_score": 0.75,
+      "sections_score": 0.75,
+      "table_columns_score": 0.0,
+      "has_references": true,
+      "study_count": 10,
+      "meets_min_studies": true,
+      "overall_score": 0.725
+    },
+    "judge_evaluation": {
+      "markdown_formatted": {
+        "score": 1,
+        "justification": "The output is well-formatted using Markdown headings, bullet points, and bold text, making it easy to read and navigate."
+      },
+      "comparative_analysis": {
+        "score": 0,
+        "justification": "The output does not include a comparative analysis table with 'Citations' and 'Impact' columns as requested by the evaluation criteria."
+      },
+      "cites_sources": {
+        "score": 0,
+        "justification": "While sources are referenced as '[Study X]' within the text and listed at the end, the references explicitly state '(No PMID provided in abstract)' for all studies, thus not citing sources with PMIDs."
+      },
+      "clinically_relevant": {
+        "score": 1,
+        "justification": "The content is highly clinically relevant and accurate, correctly identifying metformin as a first-line treatment, explaining its mechanisms, and discussing its role in combination therapies, aligning with current medical consensus and guidelines."
+      },
+      "actionable_recommendations": {
+        "score": 1,
+        "justification": "The 'Clinical Implications' section provides clear, actionable recommendations regarding metformin's continued role as a cornerstone therapy and guidance on adding other agents when glycemic targets are not met."
+      },
+      "overall_score": 0.6,
+      "strengths": [
+        "The content is highly accurate, clinically relevant, and reflects current guidelines and understanding of metformin's role in type 2 diabetes.",
+        "The output is well-structured with clear headings, making it easy to read and understand the key information.",
+        "It provides clear and actionable clinical recommendations, guiding practitioners on therapy selection and progression.",
+        "The system acknowledges limitations in the direct evidence provided (e.g., no metformin vs. placebo studies directly assessed), demonstrating transparency in evidence quality."
+      ],
+      "weaknesses": [
+        "A significant weakness is the complete absence of a comparative analysis table with 'Citations' and 'Impact' columns, which was a specific evaluation criterion.",
+        "The lack of PMIDs for the cited references makes it difficult to verify the sources or access the full studies directly, which is crucial for evidence-based clinical practice.",
+        "The prompt asks for 'Efficacy of metformin', and while the output strongly supports its use, the referenced studies largely focus on other drugs *added to* metformin, rather than direct primary efficacy trials of metformin itself, as acknowledged by the system."
+      ]
+    }
+  },
+  {
+    "test_case": "SGLT2 inhibitors heart failure",
+    "domain": "Cardiology",
+    "trajectory_evaluation": {
+      "trajectory_correct": true,
+      "all_expected_nodes_visited": true,
+      "unexpected_nodes": [],
+      "actual_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "expected_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "score": 1.0
+    },
+    "element_evaluation": {
+      "keywords_score": 1.0,
+      "sections_score": 0.75,
+      "table_columns_score": 0.0,
+      "has_references": true,
+      "study_count": 10,
+      "meets_min_studies": true,
+      "overall_score": 0.7875
+    },
+    "judge_evaluation": {
+      "markdown_formatted": {
+        "score": 1,
+        "justification": "The output uses standard Markdown for headings (##), bullet points (*), and bold text (**), making it properly formatted."
+      },
+      "comparative_analysis": {
+        "score": 0,
+        "justification": "The output does not include a comparative analysis table with explicit 'Citations' and 'Impact' columns. It lists key findings with embedded citations, but not in a table format."
+      },
+      "cites_sources": {
+        "score": 0,
+        "justification": "Sources are cited using generic labels like '[Study 1]', but no PMIDs are provided. The system notes that PMIDs were not provided in the original prompt, but for the purpose of this evaluation criterion, the absence of PMIDs results in a 'No' score."
+      },
+      "clinically_relevant": {
+        "score": 1,
+        "justification": "The content is highly accurate, clinically relevant, and up-to-date, reflecting current guideline recommendations and evidence from major trials regarding SGLT2 inhibitors in heart failure across the full LVEF spectrum and for prevention in CKD."
+      },
+      "actionable_recommendations": {
+        "score": 1,
+        "justification": "The 'Clinical Implications' section provides clear, concise, and actionable recommendations for clinicians on when and how to integrate SGLT2 inhibitors into heart failure management."
+      },
+      "overall_score": 0.6,
+      "strengths": [
+        "The content is clinically accurate and reflects the most current understanding and guideline recommendations for SGLT2 inhibitors in heart failure.",
+        "It provides a comprehensive overview of the benefits across all LVEF categories (HFrEF, HFmrEF, HFpEF) and for HF prevention in diabetic CKD.",
+        "The 'Clinical Implications' section offers clear, practical, and actionable recommendations for clinicians.",
+        "The output is well-structured with an executive summary, key findings, evidence quality assessment, and clinical implications."
+      ],
+      "weaknesses": [
+        "It fails to provide a comparative analysis table as specified in the evaluation criteria.",
+        "The citations lack PMIDs, which is crucial for quick verification and accessing the original research, even if the system noted PMIDs were not provided in its input."
+      ]
+    }
+  }
+]

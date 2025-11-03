@@ -1,0 +1,124 @@
+[
+  {
+    "test_case": "Efficacy of metformin in type 2 diabetes",
+    "domain": "Endocrinology",
+    "trajectory_evaluation": {
+      "trajectory_correct": true,
+      "all_expected_nodes_visited": true,
+      "unexpected_nodes": [],
+      "actual_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "expected_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "score": 1.0
+    },
+    "element_evaluation": {
+      "keywords_score": 1.0,
+      "sections_score": 1.0,
+      "has_references": true,
+      "study_count": 10,
+      "meets_min_studies": true,
+      "overall_score": 1.0
+    },
+    "judge_evaluation": {
+      "markdown_formatted": {
+        "score": 1,
+        "justification": "The output uses appropriate Markdown headings, bullet points, and bolding for clear readability and structure."
+      },
+      "comparative_analysis": {
+        "score": 1,
+        "justification": "The output includes comparative analysis, noting metformin's efficacy as comparable to berberine (Study 1) and its role as a foundational therapy for add-on agents (Study 2), as well as general statements about comparability to other hypoglycemic agents."
+      },
+      "cites_sources": {
+        "score": 0,
+        "justification": "The system cites studies by number and title, but does not include PMIDs (PubMed IDs) for the references, which are standard for clinical literature."
+      },
+      "clinically_relevant": {
+        "score": 1,
+        "justification": "The content accurately reflects established clinical knowledge about metformin's efficacy, its role as a first-line agent, its additional benefits, and relevant side effects, all highly pertinent to clinical practice."
+      },
+      "actionable_recommendations": {
+        "score": 1,
+        "justification": "The 'Clinical Implications' section provides clear, actionable recommendations regarding metformin's primary use in type 2 diabetes and the necessary monitoring and potential supplementation for vitamin B12 deficiency."
+      },
+      "overall_score": 0.8,
+      "strengths": [
+        "The output is well-structured with clear headings and a logical flow from executive summary to clinical implications.",
+        "It accurately summarizes the key findings regarding metformin's efficacy, including glycemic control, comparable efficacy, first-line status, and additional benefits.",
+        "It highlights an important clinical consideration (vitamin B12 deficiency) and provides actionable advice for its management.",
+        "The 'Evidence Quality' section appropriately describes the strength of the cited studies.",
+        "The content is highly clinically relevant and accurate, aligning with current guidelines and understanding of metformin."
+      ],
+      "weaknesses": [
+        "The lack of PMIDs in the references is a significant drawback, as PMIDs are crucial for clinicians to quickly access and verify the primary literature."
+      ]
+    }
+  },
+  {
+    "test_case": "SGLT2 inhibitors heart failure",
+    "domain": "Cardiology",
+    "trajectory_evaluation": {
+      "trajectory_correct": true,
+      "all_expected_nodes_visited": true,
+      "unexpected_nodes": [],
+      "actual_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "expected_trajectory": [
+        "search_node",
+        "quality_assessment_node",
+        "synthesis_node"
+      ],
+      "score": 1.0
+    },
+    "element_evaluation": {
+      "keywords_score": 1.0,
+      "sections_score": 1.0,
+      "has_references": true,
+      "study_count": 10,
+      "meets_min_studies": true,
+      "overall_score": 1.0
+    },
+    "judge_evaluation": {
+      "markdown_formatted": {
+        "score": 1,
+        "justification": "Yes, the output is properly formatted using Markdown headings (##) and bullet points (*), making it clear and readable."
+      },
+      "comparative_analysis": {
+        "score": 0,
+        "justification": "No, while the output mentions multiple studies and their collective findings (e.g., 'recent large-scale trials... have extended benefits'), it does not explicitly compare their methodologies, specific differing outcomes, or nuances between individual studies. It synthesizes findings rather than providing a detailed comparative analysis."
+      },
+      "cites_sources": {
+        "score": 0,
+        "justification": "No, the system uses placeholder references (e.g., 'Study 1', 'Study 2') and descriptive titles instead of actual PMIDs or full, verifiable bibliographic citations."
+      },
+      "clinically_relevant": {
+        "score": 1,
+        "justification": "Yes, the content is highly clinically relevant and accurately reflects the current understanding and guidelines regarding SGLT2 inhibitors in heart failure, including their efficacy across the LVEF spectrum and in diabetic CKD."
+      },
+      "actionable_recommendations": {
+        "score": 1,
+        "justification": "Yes, the 'Clinical Implications' section provides clear, actionable recommendations for clinicians, such as considering SGLT2 inhibitors a cornerstone of treatment irrespective of LVEF, and their role in quadruple therapy for HFrEF and as standard of care for HFmrEF/HFpEF."
+      },
+      "overall_score": 0.6,
+      "strengths": [
+        "Provides highly accurate and clinically relevant information on SGLT2 inhibitors in heart failure.",
+        "Covers the topic comprehensively, addressing all LVEF phenotypes (HFrEF, HFmrEF, HFpEF) and the preventive role in diabetic CKD.",
+        "Offers clear and actionable clinical recommendations, making the information directly applicable to practice.",
+        "Well-structured and easy to read, with a logical flow from executive summary to clinical implications."
+      ],
+      "weaknesses": [
+        "Fails to cite sources with PMIDs or full bibliographic details, using generic placeholders instead.",
+        "Lacks explicit comparative analysis between individual studies; it synthesizes findings rather than detailing differences or specific contributions of each study beyond their general findings."
+      ]
+    }
+  }
+]
