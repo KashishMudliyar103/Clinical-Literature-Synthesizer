@@ -1,16 +1,19 @@
 # ================================================================
 # LANGGRAPH EVALUATION FRAMEWORK
 # Based on: End-to-End + Structured (Trajectory) Evaluation
+# UPDATED: Fixed quality scoring to match app.py (5 criteria, 0-25 scale)
 # ================================================================
 
 import os
 import json
+import time
 from typing import List, Dict, TypedDict
 from datetime import datetime
 from Bio import Entrez
 import google.generativeai as genai
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
@@ -53,10 +56,9 @@ TEST_CASES = [
         "expected_elements": {
             "must_include_keywords": ["metformin", "diabetes", "HbA1c", "glycemic"],
             "must_have_sections": ["Executive Summary", "Key Findings", "Clinical Implications", "Comparative Evidence Table"],
-            "must_have_table_columns": ["Citations", "Impact"],  # New requirement
+            "must_have_table_columns": ["Citations", "Impact"],
             "must_have_references": True,
-            "min_studies": 5,
-            "max_response_time": 15.0  # Increased due to citation fetching
+            "min_studies": 5
         },
         "quality_criteria": {
             "is_markdown_formatted": True,
@@ -76,10 +78,9 @@ TEST_CASES = [
         "expected_elements": {
             "must_include_keywords": ["SGLT2", "heart failure", "mortality", "hospitalization"],
             "must_have_sections": ["Executive Summary", "Evidence", "Recommendations", "Comparative Evidence Table"],
-            "must_have_table_columns": ["Citations", "Impact"],  # New requirement
+            "must_have_table_columns": ["Citations", "Impact"],
             "must_have_references": True,
-            "min_studies": 5,
-            "max_response_time": 15.0  # Increased due to citation fetching
+            "min_studies": 5
         },
         "quality_criteria": {
             "is_markdown_formatted": True,
@@ -91,11 +92,57 @@ TEST_CASES = [
 ]
 
 # ================================================================
-# SYSTEM NODES (Your Actual System)
+# UTILITY FUNCTIONS
+# ================================================================
+
+def extract_sample_size(text: str) -> str:
+    """Extract sample size from abstract using regex"""
+    patterns = [
+        r'(\d+)\s+patients',
+        r'(\d+)\s+participants',
+        r'(\d+)\s+subjects',
+        r'n\s*=\s*(\d+)',
+        r'N\s*=\s*(\d+)'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return "Not specified"
+
+
+def estimate_journal_impact(journal_name: str) -> int:
+    """Estimate journal impact tier (0-5)"""
+    journal_name = journal_name.lower()
+    
+    # Tier 1: Top-tier journals
+    tier1 = ['new england journal of medicine', 'nejm', 'lancet', 'jama',
+             'nature', 'science', 'cell', 'nature medicine', 'bmj']
+    
+    # Tier 2: High-impact specialty
+    tier2 = ['diabetes care', 'circulation', 'journal of clinical oncology',
+             'annals of internal medicine', 'plos medicine', 'jama internal medicine',
+             'european heart journal', 'diabetologia']
+    
+    # Check tiers
+    if any(j in journal_name for j in tier1):
+        return 5
+    elif any(j in journal_name for j in tier2):
+        return 4
+    elif 'journal' in journal_name:
+        return 3
+    elif journal_name and journal_name != 'unknown journal':
+        return 2
+    
+    return 0
+
+# ================================================================
+# SYSTEM NODES (Matching app.py exactly)
 # ================================================================
 
 def search_node(state: AgentState) -> AgentState:
-    """Search PubMed with enhanced metadata"""
+    """Search PubMed with enhanced metadata (MATCHES app.py)"""
     state['trajectory'].append("search_node")
     
     try:
@@ -136,7 +183,7 @@ def search_node(state: AgentState) -> AgentState:
                 for pub_type in article.get('PublicationTypeList', []):
                     pub_types.append(str(pub_type))
                 
-                # Get journal
+                # Get journal info
                 journal_info = article.get('Journal', {})
                 journal = journal_info.get('Title', 'Unknown Journal')
                 year = journal_info.get('JournalIssue', {}).get('PubDate', {}).get('Year', 'Unknown')
@@ -174,43 +221,66 @@ def search_node(state: AgentState) -> AgentState:
 
 
 def quality_assessment_node(state: AgentState) -> AgentState:
-    """Enhanced quality assessment with 5 dimensions"""
+    """
+    Enhanced quality assessment with 5 dimensions (0-25 scale)
+    UPDATED: Now matches app.py exactly with all 5 criteria
+    """
     state['trajectory'].append("quality_assessment_node")
     
     scores = []
     for study in state['search_results']:
-        # Design score (0-5)
-        design_score = 0
+        score_components = {}
+        
+        # 1. Study Design Score (0-5)
         pub_types = ' '.join(study.get('publication_types', [])).lower()
         if 'randomized controlled trial' in pub_types or 'clinical trial' in pub_types:
-            design_score = 5
+            score_components['design'] = 5
         elif 'meta-analysis' in pub_types or 'systematic review' in pub_types:
-            design_score = 5
+            score_components['design'] = 5
         elif 'cohort' in pub_types:
-            design_score = 3
+            score_components['design'] = 3
+        elif 'case-control' in pub_types:
+            score_components['design'] = 2
         else:
-            design_score = 1
+            score_components['design'] = 1
         
-        # Recency score (0-5)
-        recency_score = 0
+        # 2. Sample Size Score (0-5) - NOW INCLUDED!
+        sample_str = extract_sample_size(study.get('abstract', ''))
+        try:
+            n = int(sample_str) if sample_str != "Not specified" else 0
+            if n >= 1000:
+                score_components['sample'] = 5
+            elif n >= 500:
+                score_components['sample'] = 4
+            elif n >= 100:
+                score_components['sample'] = 3
+            elif n >= 50:
+                score_components['sample'] = 2
+            elif n > 0:
+                score_components['sample'] = 1
+            else:
+                score_components['sample'] = 0
+        except:
+            score_components['sample'] = 0
+        
+        # 3. Recency Score (0-5)
         try:
             year = int(study.get('year', 0))
             age = 2025 - year
             if age <= 1:
-                recency_score = 5
+                score_components['recency'] = 5
             elif age <= 2:
-                recency_score = 4
+                score_components['recency'] = 4
             elif age <= 3:
-                recency_score = 3
+                score_components['recency'] = 3
             elif age <= 5:
-                recency_score = 2
+                score_components['recency'] = 2
             else:
-                recency_score = 1
+                score_components['recency'] = 1
         except:
-            recency_score = 0
+            score_components['recency'] = 0
         
-        # Citation score (0-5)
-        citation_score = 0
+        # 4. Citation Score (0-5) - Normalized by publication age
         citation_count = study.get('citation_count', 0)
         try:
             year = int(study.get('year', 2025))
@@ -218,33 +288,28 @@ def quality_assessment_node(state: AgentState) -> AgentState:
             citations_per_year = citation_count / years_since_pub
             
             if citations_per_year >= 50:
-                citation_score = 5
+                score_components['citations'] = 5
             elif citations_per_year >= 20:
-                citation_score = 4
+                score_components['citations'] = 4
             elif citations_per_year >= 10:
-                citation_score = 3
+                score_components['citations'] = 3
             elif citations_per_year >= 5:
-                citation_score = 2
+                score_components['citations'] = 2
             elif citation_count > 0:
-                citation_score = 1
+                score_components['citations'] = 1
+            else:
+                score_components['citations'] = 0
         except:
-            citation_score = 0
+            score_components['citations'] = 0
         
-        # Impact score (0-5)
-        impact_score = 0
-        journal = study.get('journal', '').lower()
-        if any(j in journal for j in ['new england journal', 'nejm', 'lancet', 'jama', 'nature', 'science', 'bmj']):
-            impact_score = 5
-        elif any(j in journal for j in ['diabetes care', 'circulation', 'annals internal']):
-            impact_score = 4
-        elif 'journal' in journal:
-            impact_score = 3
-        elif journal and journal != 'unknown journal':
-            impact_score = 2
+        # 5. Journal Impact Score (0-5)
+        impact_score = estimate_journal_impact(study.get('journal', ''))
+        score_components['impact'] = impact_score
         
-        # Total score (0-25, excluding sample size for simplicity)
-        total = design_score + recency_score + citation_score + impact_score + 3  # Add 3 as default sample score
+        # Calculate Total Score (0-25) - NO ARBITRARY ADDITIONS!
+        total = sum(score_components.values())
         
+        # GRADE Classification (matching app.py thresholds)
         if total >= 20:
             grade = "High Quality"
         elif total >= 14:
@@ -258,10 +323,12 @@ def quality_assessment_node(state: AgentState) -> AgentState:
             'pmid': study['pmid'],
             'score': total,
             'grade': grade,
-            'design_score': design_score,
-            'recency_score': recency_score,
-            'citation_score': citation_score,
-            'impact_score': impact_score
+            'design_score': score_components['design'],
+            'sample_score': score_components['sample'],
+            'recency_score': score_components['recency'],
+            'citation_score': score_components['citations'],
+            'impact_score': score_components['impact'],
+            'max_score': 25
         })
     
     state['quality_scores'] = scores
@@ -269,7 +336,7 @@ def quality_assessment_node(state: AgentState) -> AgentState:
 
 
 def synthesis_node(state: AgentState) -> AgentState:
-    """Generate synthesis"""
+    """Generate synthesis (MATCHES app.py)"""
     state['trajectory'].append("synthesis_node")
     
     try:
@@ -277,31 +344,66 @@ def synthesis_node(state: AgentState) -> AgentState:
         
         docs_text = ""
         for idx, doc in enumerate(state['search_results'][:5], 1):
-            docs_text += f"\nStudy {idx}: {doc['title']}\nAbstract: {doc['abstract'][:800]}\n"
+            quality = next((q for q in state['quality_scores'] if q['pmid'] == doc['pmid']), {})
+            
+            docs_text += f"\n{'='*60}\n"
+            docs_text += f"STUDY {idx}\n"
+            docs_text += f"{'='*60}\n"
+            docs_text += f"Title: {doc['title']}\n"
+            docs_text += f"Journal: {doc['journal']} ({doc['year']})\n"
+            docs_text += f"PMID: {doc['pmid']}\n"
+            docs_text += f"Study Type: {', '.join(doc['publication_types'][:3])}\n"
+            docs_text += f"Citations: {doc.get('citation_count', 0)}\n"
+            docs_text += f"Quality Grade: {quality.get('grade', 'Not assessed')} ({quality.get('score', 0)}/25)\n"
+            docs_text += f"\nABSTRACT:\n{doc['abstract'][:800]}\n"
         
-        prompt = f"""Clinical Question: {state['user_query']}
+        prompt = f"""You are a clinical research analyst preparing an evidence synthesis report.
 
-Studies:
+CLINICAL QUESTION: "{state['user_query']}"
+
+EVIDENCE BASE: {len(state['search_results'])} studies analyzed
 {docs_text}
 
-Generate a structured clinical evidence synthesis with these sections:
+Generate a comprehensive clinical evidence report following this EXACT structure:
 
-## Executive Summary
-[2-3 sentences answering the question]
+# EXECUTIVE SUMMARY
+[2-3 sentences directly answering the clinical question with level of evidence]
 
-## Key Findings
-[Bullet points of main findings from studies]
+# EVIDENCE QUALITY OVERVIEW
+- Total studies analyzed: {len(state['search_results'])}
+- High quality studies: [count from data]
+- Study designs: [RCTs, meta-analyses, cohort studies, etc.]
+- Date range: [specify]
 
-## Evidence Quality
-[Brief assessment]
+# COMPARATIVE EVIDENCE TABLE
 
-## Clinical Implications
-[Practical recommendations]
+| Study (Year) | Design | Sample Size | Citations | Impact | Key Intervention | Primary Outcome | Effect Size | Quality |
+|-------------|---------|-------------|-----------|--------|------------------|-----------------|-------------|---------|
+[Fill each row with ACTUAL data from the studies above]
 
-## References
-[List studies with PMIDs]
+# KEY FINDINGS BY STUDY
 
-Use markdown formatting and cite sources."""
+[For EACH study provide:]
+**Study [N]: [Short Title] ([Year])**
+- Design & Population: [specifics]
+- Intervention: [what was tested]
+- Primary Outcome: [main result with numbers]
+- Quality Assessment: [reference the grade provided]
+
+# SYNTHESIS & CLINICAL IMPLICATIONS
+
+**Consistency of Evidence:** [Do studies agree?]
+
+**Strength of Recommendation:** [Based on quality and consistency]
+
+**Clinical Application:** [Practical guidance]
+
+**Knowledge Gaps:** [What's unclear?]
+
+# REFERENCES
+[List all studies with PMID links]
+
+CRITICAL: Use ACTUAL numbers from studies, cite quality grades provided above."""
 
         response = model.generate_content(prompt)
         state['final_summary'] = response.text if response else "Generation failed"
@@ -324,13 +426,8 @@ class StructuredEvaluator:
     def evaluate_trajectory(actual: List[str], expected: List[str]) -> Dict:
         """Check if agent followed expected path"""
         
-        # Check exact sequence
         trajectory_match = actual == expected
-        
-        # Check if all expected nodes were visited
         all_nodes_visited = all(node in actual for node in expected)
-        
-        # Check for unexpected nodes
         unexpected_nodes = [node for node in actual if node not in expected]
         
         return {
@@ -359,13 +456,13 @@ class StructuredEvaluator:
                            if section.lower() in final_text)
         results['sections_score'] = sections_found / len(expected['must_have_sections'])
         
-        # Check table columns (if specified)
+        # Check table columns
         if 'must_have_table_columns' in expected:
             table_cols_found = sum(1 for col in expected['must_have_table_columns']
                                  if col.lower() in final_text)
             results['table_columns_score'] = table_cols_found / len(expected['must_have_table_columns'])
         else:
-            results['table_columns_score'] = 1.0  # Not required, give full credit
+            results['table_columns_score'] = 1.0
         
         # Check references
         has_refs = 'pmid' in final_text or 'reference' in final_text
@@ -437,11 +534,9 @@ Format your response as JSON:
 
         try:
             response = self.model.generate_content(judge_prompt)
-            
-            # Parse JSON from response
             response_text = response.text
             
-            # Extract JSON (it might be wrapped in ```json```)
+            # Extract JSON
             if "```json" in response_text:
                 json_str = response_text.split("```json")[1].split("```")[0].strip()
             else:
@@ -465,7 +560,7 @@ def run_evaluation():
     """Run both evaluation methods"""
     
     print("="*80)
-    print("LANGGRAPH AGENT EVALUATION")
+    print("LANGGRAPH AGENT EVALUATION - UPDATED WITH CONSISTENT SCORING")
     print("="*80)
     
     # Create workflow
@@ -490,6 +585,7 @@ def run_evaluation():
         print("-"*80)
         
         # Run agent
+        start_time = time.time()
         initial_state = {
             "user_query": test_case['query'],
             "search_results": [],
@@ -500,6 +596,7 @@ def run_evaluation():
         }
         
         final_state = app.invoke(initial_state)
+        elapsed_time = time.time() - start_time
         
         # EVALUATION 1: Structured (Trajectory)
         print("\n1. STRUCTURED EVALUATION (Trajectory)")
@@ -509,6 +606,7 @@ def run_evaluation():
         )
         print(f"   Trajectory Match: {'✓' if traj_eval['trajectory_correct'] else '✗'}")
         print(f"   Score: {traj_eval['score']:.2f}")
+        print(f"   Time: {elapsed_time:.2f}s")
         
         element_eval = structured_eval.evaluate_elements(
             final_state,
@@ -537,13 +635,32 @@ def run_evaluation():
         else:
             print(f"   Judge Error: {judge_eval['error']}")
         
+        # Quality Score Analysis
+        print(f"\n3. QUALITY ASSESSMENT ANALYSIS")
+        if final_state['quality_scores']:
+            scores = [q['score'] for q in final_state['quality_scores']]
+            print(f"   Average Quality: {sum(scores)/len(scores):.1f}/25")
+            print(f"   Score Range: {min(scores)}-{max(scores)}")
+            
+            # Grade distribution
+            grades = {}
+            for q in final_state['quality_scores']:
+                grade = q['grade']
+                grades[grade] = grades.get(grade, 0) + 1
+            print(f"   Grade Distribution: {grades}")
+        
         # Store results
         results.append({
             "test_case": test_case['query'],
             "domain": test_case['domain'],
+            "elapsed_time": elapsed_time,
             "trajectory_evaluation": traj_eval,
             "element_evaluation": element_eval,
-            "judge_evaluation": judge_eval
+            "judge_evaluation": judge_eval,
+            "quality_stats": {
+                "scores": [q['score'] for q in final_state['quality_scores']],
+                "grades": [q['grade'] for q in final_state['quality_scores']]
+            }
         })
     
     # ================================================================
@@ -566,15 +683,30 @@ def run_evaluation():
     judge_scores = [r['judge_evaluation'].get('overall_score', 0) for r in results]
     print(f"LLM Judge Score: {sum(judge_scores)/len(judge_scores):.2%}")
     
-    # Quality assessment statistics
-    print(f"\n--- Quality Assessment Analysis ---")
-    for idx, result in enumerate(results, 1):
-        print(f"\nQuery {idx}: {result['test_case']}")
-        if 'quality_scores' in results[idx-1]:
-            scores = [q['score'] for q in results[idx-1].get('quality_scores', [])]
-            if scores:
-                print(f"  Average Quality Score: {sum(scores)/len(scores):.1f}/25")
-                print(f"  Score Range: {min(scores)}-{max(scores)}")
+    # Average time
+    times = [r['elapsed_time'] for r in results]
+    print(f"Average Execution Time: {sum(times)/len(times):.2f}s")
+    
+    # Quality statistics
+    print(f"\n--- Quality Assessment Statistics ---")
+    all_scores = []
+    for r in results:
+        all_scores.extend(r['quality_stats']['scores'])
+    
+    if all_scores:
+        print(f"Overall Average Quality: {sum(all_scores)/len(all_scores):.1f}/25")
+        print(f"Quality Range: {min(all_scores)}-{max(all_scores)}")
+        
+        # Count by grade
+        all_grades = []
+        for r in results:
+            all_grades.extend(r['quality_stats']['grades'])
+        
+        from collections import Counter
+        grade_counts = Counter(all_grades)
+        print(f"Grade Distribution Across All Tests:")
+        for grade, count in sorted(grade_counts.items()):
+            print(f"  {grade}: {count} ({count/len(all_grades)*100:.1f}%)")
     
     # Save results
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -594,6 +726,7 @@ def run_evaluation():
 
 if __name__ == "__main__":
     print("\nLangGraph Agent Evaluation Framework")
+    print("UPDATED: Quality scoring now consistent with app.py (5 criteria, 0-25 scale)")
     print("Methods: 1) Structured (Trajectory) + 2) LLM-as-Judge\n")
     
     results = run_evaluation()

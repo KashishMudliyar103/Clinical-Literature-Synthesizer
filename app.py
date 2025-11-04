@@ -1,6 +1,7 @@
 # ================================================================
 # ADVANCED CLINICAL LITERATURE SYNTHESIS AGENT
 # Enhanced with: Structured Analysis, Quality Assessment, Multi-criteria Filtering
+# UPDATED: Added working filter integration (year range, study types, quality threshold)
 # ================================================================
 
 import os
@@ -37,7 +38,7 @@ class Config:
     }
 
 # ================================================================
-# STATE
+# STATE - UPDATED WITH FILTERS
 # ================================================================
 
 class AgentState(TypedDict):
@@ -49,26 +50,56 @@ class AgentState(TypedDict):
     comparative_table: str
     error: str
     metadata: Dict
+    filters: Dict  # NEW: Store user filter preferences
 
 # ================================================================
 # ENHANCED NODES
 # ================================================================
 
 def search_node(state: AgentState) -> AgentState:
-    """Enhanced PubMed search with metadata extraction"""
+    """
+    Enhanced PubMed search with user-defined filters
+    
+    NEW FEATURES:
+    - Filters by publication year range
+    - Filters by study type (RCT, Meta-Analysis, etc.)
+    - Uses PubMed's advanced query syntax
+    """
     try:
         Entrez.email = Config.ENTREZ_EMAIL
         
-        # Search with filters for quality
+        # Get filters from state (NEW)
+        filters = state.get('filters', {})
+        year_range = filters.get('year_range', (2020, 2025))
+        preferred_types = filters.get('study_types', [])
+        
         search_term = state['user_query']
         
+        # Build filtered query (NEW)
+        query_parts = [search_term]
+        
+        # Add publication type filters if specified
+        if preferred_types:
+            type_mapping = {
+                "RCT": "Randomized Controlled Trial[pt]",
+                "Meta-Analysis": "Meta-Analysis[pt]",
+                "Cohort": "Cohort Studies[MeSH]",
+                "Case-Control": "Case-Control Studies[MeSH]"
+            }
+            type_filters = [type_mapping[t] for t in preferred_types if t in type_mapping]
+            if type_filters:
+                query_parts.append(f"({' OR '.join(type_filters)})")
+        
+        final_query = ' AND '.join(query_parts)
+        
+        # Search with filters applied
         handle = Entrez.esearch(
             db="pubmed",
-            term=search_term,
+            term=final_query,
             retmax=Config.MAX_RESULTS,
-            sort='relevance',  # Changed to relevance for better quality
-            mindate="2020",  # Last 5 years
-            maxdate=str(datetime.now().year)
+            sort='relevance',
+            mindate=str(year_range[0]),  # NEW: Year filter
+            maxdate=str(year_range[1])   # NEW: Year filter
         )
         record = Entrez.read(handle)
         handle.close()
@@ -76,7 +107,7 @@ def search_node(state: AgentState) -> AgentState:
         pubmed_ids = record['IdList']
         
         if not pubmed_ids:
-            state['error'] = "No results found"
+            state['error'] = "No results found with current filters"
             return state
         
         # Fetch detailed records
@@ -159,7 +190,8 @@ def search_node(state: AgentState) -> AgentState:
         state['metadata'] = {
             'total_found': len(search_results),
             'search_date': datetime.now().isoformat(),
-            'query': state['user_query']
+            'query': state['user_query'],
+            'filters_applied': filters  # NEW: Track what filters were used
         }
         
     except Exception as e:
@@ -361,6 +393,47 @@ def estimate_journal_impact(journal_name: str) -> int:
     return 0
 
 
+def filter_by_quality_node(state: AgentState) -> AgentState:
+    """
+    NEW NODE: Filter results based on minimum quality threshold
+    
+    This runs AFTER quality assessment and removes studies that don't
+    meet the user's minimum quality requirement.
+    """
+    
+    filters = state.get('filters', {})
+    min_quality = filters.get('min_quality', 'Very Low')
+    
+    # Map quality names to minimum scores
+    quality_thresholds = {
+        'High': 20,
+        'Moderate': 14,
+        'Low': 8,
+        'Very Low': 0
+    }
+    
+    threshold = quality_thresholds.get(min_quality, 0)
+    
+    # Filter both search results and quality scores
+    filtered_results = []
+    filtered_scores = []
+    
+    for result in state['search_results']:
+        quality = next((q for q in state['quality_scores'] if q['pmid'] == result['pmid']), None)
+        
+        if quality and quality['quality_score'] >= threshold:
+            filtered_results.append(result)
+            filtered_scores.append(quality)
+    
+    state['search_results'] = filtered_results
+    state['quality_scores'] = filtered_scores
+    
+    if not filtered_results:
+        state['error'] = f"No studies meet minimum quality: {min_quality}"
+    
+    return state
+
+
 def advanced_synthesis_node(state: AgentState) -> AgentState:
     """Enhanced synthesis with structured output"""
     
@@ -505,25 +578,32 @@ def create_manual_summary(state: AgentState) -> str:
     return summary
 
 # ================================================================
-# WORKFLOW
+# WORKFLOW - UPDATED WITH FILTER NODE
 # ================================================================
 
 def create_workflow() -> StateGraph:
+    """
+    Create the workflow with the new filter node
+    
+    Flow: Search → Quality Assessment → Filter by Quality → Synthesis
+    """
     workflow = StateGraph(AgentState)
     
     workflow.add_node("search", search_node)
     workflow.add_node("quality_assessment", quality_assessment_node)
+    workflow.add_node("filter_quality", filter_by_quality_node)  # NEW NODE
     workflow.add_node("synthesis", advanced_synthesis_node)
     
     workflow.set_entry_point("search")
     workflow.add_edge("search", "quality_assessment")
-    workflow.add_edge("quality_assessment", "synthesis")
+    workflow.add_edge("quality_assessment", "filter_quality")  # NEW EDGE
+    workflow.add_edge("filter_quality", "synthesis")           # UPDATED
     workflow.add_edge("synthesis", END)
     
     return workflow.compile()
 
 # ================================================================
-# STREAMLIT UI
+# STREAMLIT UI - UPDATED WITH BETTER STYLING
 # ================================================================
 
 def main():
@@ -534,131 +614,289 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Force light theme
+    # Modern, vibrant styling
     st.markdown("""
         <style>
-        /* Force light theme */
+        /* Main app background with subtle gradient */
         .stApp {
-            background-color: #FFFFFF;
-            color: #1F1F1F;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
         
-        /* Sidebar styling */
+        /* Sidebar with medical theme */
         [data-testid="stSidebar"] {
-            background-color: #F0F2F6;
-        }
-        
-        /* Metric cards */
-        [data-testid="stMetricValue"] {
-            color: #000000 !important;
-            font-weight: 700 !important;
-        }
-        
-        [data-testid="stMetricLabel"] {
-            color: #000000 !important;
-            font-weight: 600 !important;
-        }
-        
-        [data-testid="stMetricDelta"] {
-            color: #000000 !important;
-        }
-        
-        /* Headers */
-        h1, h2, h3, h4, h5, h6 {
-            color: #1F1F1F;
-        }
-        
-        /* Text areas and inputs */
-        .stTextArea textarea {
-            background-color: #FFFFFF;
-            color: #1F1F1F;
-            border: 1px solid #D3D3D3;
-        }
-        
-        /* Buttons */
-        .stButton > button {
-            background-color: #FF4B4B;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
         
+        [data-testid="stSidebar"] .stMarkdown {
+            color: white !important;
+        }
+        
+        [data-testid="stSidebar"] h1, 
+        [data-testid="stSidebar"] h2, 
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label {
+            color: white !important;
+        }
+        
+        /* Main title styling */
+        h1 {
+            color: #2c3e50 !important;
+            font-weight: 800 !important;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            padding: 20px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Section headers */
+        h2 {
+            color: #34495e !important;
+            font-weight: 700 !important;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        
+        h3 {
+            color: #2c3e50 !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Metric cards with vibrant colors */
+        [data-testid="stMetricValue"] {
+            color: #667eea !important;
+            font-weight: 800 !important;
+            font-size: 2rem !important;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            color: #2c3e50 !important;
+            font-weight: 700 !important;
+            font-size: 0.95rem !important;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        [data-testid="stMetricDelta"] {
+            color: #27ae60 !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Text areas with modern styling */
+        .stTextArea textarea {
+            background-color: white !important;
+            color: #2c3e50 !important;
+            border: 2px solid #667eea !important;
+            border-radius: 10px !important;
+            font-size: 1rem !important;
+            padding: 15px !important;
+        }
+        
+        .stTextArea textarea:focus {
+            border-color: #764ba2 !important;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+        }
+        
+        .stTextArea label {
+            color: #2c3e50 !important;
+            font-weight: 700 !important;
+            font-size: 1.1rem !important;
+        }
+        
+        /* Buttons with gradient */
+        .stButton > button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 12px 30px !important;
+            font-size: 1rem !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
+        }
+        
         .stButton > button:hover {
-            background-color: #FF6B6B;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6) !important;
         }
         
-        /* Expander */
+        /* Expander headers */
         .streamlit-expanderHeader {
-            background-color: #F0F2F6;
-            color: #1F1F1F;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%) !important;
+            color: #2c3e50 !important;
+            font-weight: 700 !important;
+            border: 2px solid #667eea !important;
+            border-radius: 10px !important;
+            padding: 15px !important;
         }
         
-        /* Code blocks */
-        code {
-            background-color: #F0F2F6;
-            color: #1F1F1F;
+        .streamlit-expanderHeader:hover {
+            border-color: #764ba2 !important;
+            background: linear-gradient(135deg, #e8eef5 0%, #dce4f0 100%) !important;
         }
         
-        /* Markdown */
+        /* Expander content - fix text visibility */
+        .streamlit-expanderContent {
+            background-color: white !important;
+            padding: 20px !important;
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 0 0 10px 10px !important;
+        }
+        
+        .streamlit-expanderContent p,
+        .streamlit-expanderContent div,
+        .streamlit-expanderContent span {
+            color: #2c3e50 !important;
+        }
+        
+        /* Make sure all text inside expanders is visible */
+        [data-testid="stExpander"] p {
+            color: #2c3e50 !important;
+        }
+        
+        [data-testid="stExpander"] .stMarkdown {
+            color: #2c3e50 !important;
+        }
+        
+        [data-testid="stExpander"] strong {
+            color: #1a1a1a !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Markdown content */
         .stMarkdown {
-            color: #1F1F1F;
+            color: #2c3e50 !important;
+        }
+        
+        /* Links */
+        a {
+            color: #667eea !important;
+            font-weight: 600 !important;
+            text-decoration: none !important;
+        }
+        
+        a:hover {
+            color: #764ba2 !important;
+            text-decoration: underline !important;
         }
         
         /* Progress bar */
         .stProgress > div > div {
-            background-color: #FF4B4B;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%) !important;
         }
         
-        /* Success/Warning/Error boxes */
-        .stAlert {
-            background-color: #F0F2F6;
-            color: #1F1F1F;
-        }
-        
-        /* Status messages - make them clearly visible */
+        /* Status messages with modern cards */
         .stInfo, [data-testid="stNotification"] {
-            background-color: #E3F2FD !important;
-            border-left: 4px solid #2196F3 !important;
-            color: #1565C0 !important;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%) !important;
+            border-left: 5px solid #2196F3 !important;
+            color: #0d47a1 !important;
             font-weight: 600 !important;
             padding: 1rem !important;
+            border-radius: 10px !important;
+            box-shadow: 0 4px 6px rgba(33, 150, 243, 0.2) !important;
         }
         
         .stSuccess {
-            background-color: #E8F5E9 !important;
-            border-left: 4px solid #4CAF50 !important;
-            color: #2E7D32 !important;
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%) !important;
+            border-left: 5px solid #4CAF50 !important;
+            color: #1b5e20 !important;
             font-weight: 600 !important;
             padding: 1rem !important;
+            border-radius: 10px !important;
+            box-shadow: 0 4px 6px rgba(76, 175, 80, 0.2) !important;
         }
         
         .stWarning {
-            background-color: #FFF3E0 !important;
-            border-left: 4px solid #FF9800 !important;
-            color: #E65100 !important;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+            border-left: 5px solid #FF9800 !important;
+            color: #e65100 !important;
             font-weight: 600 !important;
             padding: 1rem !important;
+            border-radius: 10px !important;
+            box-shadow: 0 4px 6px rgba(255, 152, 0, 0.2) !important;
         }
         
         .stError {
-            background-color: #FFEBEE !important;
-            border-left: 4px solid #F44336 !important;
-            color: #C62828 !important;
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%) !important;
+            border-left: 5px solid #F44336 !important;
+            color: #b71c1c !important;
             font-weight: 600 !important;
             padding: 1rem !important;
+            border-radius: 10px !important;
+            box-shadow: 0 4px 6px rgba(244, 67, 54, 0.2) !important;
         }
         
         /* Progress text */
         .stProgress + div {
-            color: #1565C0 !important;
-            font-weight: 600 !important;
+            color: #667eea !important;
+            font-weight: 700 !important;
             font-size: 1.1rem !important;
+        }
+        
+        /* Code blocks */
+        code {
+            background-color: #f8f9fa !important;
+            color: #e83e8c !important;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Download button styling */
+        .stDownloadButton > button {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 12px 30px !important;
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4) !important;
+        }
+        
+        .stDownloadButton > button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(39, 174, 96, 0.6) !important;
+        }
+        
+        /* Selectbox and slider labels */
+        .stSelectbox label, .stSlider label {
+            color: white !important;
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+        }
+        
+        /* Multiselect */
+        .stMultiSelect label {
+            color: white !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Horizontal rule */
+        hr {
+            border: none;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            margin: 30px 0;
+        }
+        
+        /* Quality metric cards container */
+        [data-testid="column"] {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         </style>
     """, unsafe_allow_html=True)
     
     st.title("🔬 Advanced Clinical Literature Synthesis Agent")
     st.markdown("""
-    **Multi-Agent Workflow:** PubMed Search → Quality Assessment → Evidence Synthesis  
-    **Features:** Automated quality grading • Comparative analysis • Structured reports
+    **Multi-Agent Workflow:** PubMed Search → Quality Assessment → Filter by Quality → Evidence Synthesis  
+    **Features:** Automated quality grading • Comparative analysis • Structured reports • Smart filtering
     """)
     
     # System status
@@ -672,23 +910,35 @@ def main():
     
     st.markdown("---")
     
-    # Sidebar
+    # Sidebar - UPDATED TO CAPTURE FILTER VALUES
     with st.sidebar:
         st.header("⚙️ Advanced Settings")
         
         st.markdown("**Evidence Filters:**")
-        year_filter = st.slider("Publication Years", 2020, 2025, (2020, 2025))
         
+        # Year filter (NEW - actually works now)
+        year_filter = st.slider(
+            "Publication Years", 
+            2020, 
+            2025, 
+            (2020, 2025),
+            help="Only show studies published in this year range"
+        )
+        
+        # Study type filter (NEW - actually works now)
         study_types = st.multiselect(
             "Preferred Study Types",
             ["RCT", "Meta-Analysis", "Cohort", "Case-Control"],
-            default=["RCT", "Meta-Analysis"]
+            default=["RCT", "Meta-Analysis"],
+            help="Filter PubMed search to only these study designs"
         )
         
+        # Quality filter (NEW - actually works now)
         min_quality = st.select_slider(
             "Minimum Quality",
             options=["Very Low", "Low", "Moderate", "High"],
-            value="Low"
+            value="Low",
+            help="Hide studies below this quality threshold"
         )
         
         st.markdown("---")
@@ -722,14 +972,15 @@ def main():
         if st.button("🔄 Clear", use_container_width=True):
             st.rerun()
     
-    # Analysis
+    # Analysis - UPDATED TO PASS FILTERS TO WORKFLOW
     if analyze and user_query:
         progress = st.progress(0)
         status = st.empty()
         
-        status.info("🔍 Searching PubMed database...")
+        status.info("🔍 Searching PubMed database with filters...")
         progress.progress(20)
         
+        # NEW: Create initial state WITH FILTERS
         initial_state = {
             "user_query": user_query,
             "search_results": [],
@@ -738,7 +989,12 @@ def main():
             "final_summary": "",
             "comparative_table": "",
             "error": "",
-            "metadata": {}
+            "metadata": {},
+            "filters": {  # NEW: Pass user's filter selections
+                "year_range": year_filter,
+                "study_types": study_types,
+                "min_quality": min_quality
+            }
         }
         
         try:
@@ -747,7 +1003,10 @@ def main():
             progress.progress(40)
             status.info("📊 Assessing evidence quality...")
             
-            progress.progress(70)
+            progress.progress(60)
+            status.info("🔎 Filtering by quality threshold...")
+            
+            progress.progress(80)
             status.info("🤖 Synthesizing findings...")
             
             final_state = workflow.invoke(initial_state)
@@ -763,12 +1022,19 @@ def main():
             if final_state.get('error') and not final_state.get('search_results'):
                 st.error(f"❌ {final_state['error']}")
             else:
+                # Show applied filters (NEW)
+                filters_applied = final_state.get('metadata', {}).get('filters_applied', {})
+                if filters_applied:
+                    st.info(f"🔍 **Filters Applied:** Years {filters_applied['year_range'][0]}-{filters_applied['year_range'][1]} | " +
+                           f"Study Types: {', '.join(filters_applied['study_types']) if filters_applied['study_types'] else 'All'} | " +
+                           f"Min Quality: {filters_applied['min_quality']}")
+                
                 # Metrics
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Studies Analyzed", len(final_state['search_results']))
                 with col2:
-                    high_q = sum(1 for q in final_state.get('quality_scores', []) if q['quality_score'] >= 12)
+                    high_q = sum(1 for q in final_state.get('quality_scores', []) if q['quality_score'] >= 20)
                     st.metric("High Quality Studies", high_q)
                 with col3:
                     avg_year = sum(int(s.get('year', 0)) for s in final_state['search_results']) / len(final_state['search_results']) if final_state['search_results'] else 0
@@ -805,7 +1071,7 @@ def main():
                     quality = next((q for q in final_state.get('quality_scores', []) if q['pmid'] == doc['pmid']), {})
                     
                     with st.expander(
-                        f"📄 [{quality.get('quality_score', 0)}/{quality.get('max_score', 25)}] Study {idx}: {doc['title']}", 
+                        f"📄 [{quality.get('quality_score', 0)}/{quality.get('max_score', 25)}] Study {idx}: {doc['title'][:100]}...", 
                         expanded=(idx == 1)
                     ):
                         col1, col2 = st.columns([1, 2])
@@ -846,6 +1112,11 @@ Query: {user_query}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 Studies Analyzed: {len(final_state['search_results'])}
 High Quality: {high_q}
+
+Filters Applied:
+- Year Range: {year_filter[0]}-{year_filter[1]}
+- Study Types: {', '.join(study_types) if study_types else 'All'}
+- Minimum Quality: {min_quality}
 
 {final_state['final_summary']}
 
